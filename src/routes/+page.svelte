@@ -24,9 +24,20 @@
 
 	var loopIndex = 0
 	const directions = [[0, -1], [-1, 0], [0, 1], [1, 0], [0, 0]]
-	const gridSize = 5
+
+	function sample (list: any[]) {
+		return list[Math.floor((Math.random() * list.length))];
+	}
+
+	function getRandomNumber(min: number, max: number) {
+  		return Math.floor(Math.random() * (max - min + 1)) + min;
+	}
+
+
+	const gridSize = 6
 	var activated = false
 	var intervalID: number
+	var inspect: string[] = []
 
 	// type NestedArray = (string | number | NestedArray)[]
 
@@ -35,7 +46,7 @@
 		if (!Array.isArray(program)) {
  
 			if (program == 'random') {
-				return `Math.floor(Math.random() * 100)`
+				return `getRandomNumber(0, 4)`
 			}
 
 			else if (program == 'empty') {
@@ -111,7 +122,7 @@
 				r += `${left} ${operator} ${right}`
 			}
 
-			else if (/and|or|xor/.test(program[p].toString())) {
+			else if (['and', 'or', 'xor'].includes(program[p])) {
 				const operator = transpile(x, y, program[p])
 				p += 1
 				const left = transpile(x, y, program[p])
@@ -186,30 +197,130 @@
 				r += `console.log(${value}); `
 			}
 
+			else if (program[p] == 'random') {
+				p += 1
+				r += `getRandomNumber(0, 4)`
+			}
+
+			else if (program[p] == 'empty') {
+				p += 1
+				r += `'rgb(0, 0, 0)'`
+			}
+
 			else {
 				r += program[p]
 				p += 1
 			}
 		}
 
+		// console.log('transpiled')
+		// console.log(r)
 		return r
 	}
 
-	// console.log(transpile(program))
+	function randomCode(): string[] {
+
+		const arg0 = ['0', '1', '2', '3', '25', '50', '75', '100', 'random', 'empty', 'a', 'b', 'c', 'energy', 'color']
+		const arg1 = ['transfer', 'attack', 'move', 'grow']
+		const arg2 = ['var', 'set', 'if', 'loop', 'lookup', '>', '>=', '==', '<=', '<', '!=', 'and', 'or', 'xor', '+', '-', '*', '/', '%']
+
+		const comparisons = ['>', '>=', '==', '<=', '<', '!=']
+		const operators = ['+', '-', '*', '/', '%']
+		const action2 = ['var', 'set', 'if', 'loop', 'lookup']
+
+		const maxDepth = 3
+		let maxArity = 2
+
+		function buildExpression(depth: number, arity: number, multiple: boolean = false): string {
+			const r = []
+			do {
+				if (depth >= maxDepth) {
+					maxArity = 1
+				}
+
+				if (arity == 0) {
+
+					r.push(buildNumber())
+
+				} else if (arity == 1) {
+
+					r.push(`'${sample(arg1)}', ${sample([0, 1, 2, 3, 4, "'random'"])}`)
+
+				} else {
+
+					const operator = sample(action2)
+
+					if (operator == 'if') {
+						r.push("'if', [" + buildCondition() + "], [" + buildExpression(depth + 1, getRandomNumber(1, maxArity), true) + "]")
+					} else if (operator == 'loop') {
+						r.push("'loop', ['" + sample(arg0) + "'], [" + buildExpression(depth + 1, getRandomNumber(1, maxArity), true) + "]")
+					} else if (operator == 'lookup') {
+						r.push("'lookup', [" + sample([0, 1, 2, 3, 4, "'random'"]) + "], [" + buildExpression(depth + 1, getRandomNumber(1, maxArity), true) + "]")
+					} else if (operator == 'var' || operator == 'set') {
+						r.push(`'${operator}', '${sample(['a', 'b', 'c'])}', [${buildNumber()}]`)
+					}
+					
+					else {
+						r.push(`'${operator}', [${buildExpression(depth + 1, getRandomNumber(1, maxArity))}], [${buildExpression(depth + 1, getRandomNumber(1, maxArity))}]`)
+					}
+
+				}
+
+			} while (multiple && (Math.random() * 100) > 75 && depth < maxDepth) 
+
+			return r.join(', ')
+		}
+
+		function buildNumber(): string {
+
+			const numbers = ['0', '1', '2', '3', '25', '50', '75', '100', 'random']
+
+			if (Math.random() > 0.6) {
+				const value = ['energy']
+				return `'lookup', ${sample([0, 1, 2, 3, "'random'"])}, '${sample(value)}'`
+			} else {
+
+				if (Math.random() > 0.75) {
+					return `'${sample(operators)}', ['${sample(numbers)}'], ['${sample(numbers)}']`
+				}
+				return `'${sample(numbers)}'`
+			}
+
+		}
+
+		function buildCondition(): string {
+
+			const operator = sample(comparisons)
+			const left = buildNumber()
+			const right = buildNumber()
+
+			return `'${operator}', [${left}], [${right}]`
+		}
+
+		const code = `[${buildExpression(0, 2, true)}]`
+		// console.log('code')
+		// console.log(c)
+		// console.log('evaluated')
+		// console.log(eval(c))
+		return eval(code)
+	}
 
 	class Cell {
 		x: number
 		y: number
 		energy: number
+		hitpoint: number
 		code: any[]
 		transpiled: string
 		color: string
 		buffered: boolean
+		
 
 		constructor(x: number, y: number, code: any[]) {
 			this.x = x
 			this.y = y
 			this.energy = 100
+			this.hitpoint = 50
 			this.code = code
 			this.transpiled = transpile(x, y, code)
 			this.color = this.stringToColor(this.transpiled)
@@ -217,7 +328,6 @@
 		}
 
 		stringToColor(str: string) {
-
 			// Compute the hash code of the string
 			var hash = 0;
 			for (var i = 0; i < str.length; i++) {
@@ -231,53 +341,70 @@
 
 			// Return the RGB color value
 			return 'rgb(' + r + ', ' + g + ', ' + b + ')';
-
-		}
-
-		randomCode() {
-			
-			const arg0 = ['0', '1', '2', '3', '25', '50', '75', '100', 'random', 'empty', 'a', 'b', 'c', 'd', 'energy', 'color']
-			const arg1 = ['transfer', 'attack', 'move', 'grow']
-			const arg2 = ['var', 'set', 'if', 'loop', 'lookup', '>', '>=', '==', '<=', '<', '!=', 'and', 'or', 'xor', '+', '-', '*', '/', '%']
-
-			function buildExpression(arity: number): string{
-				if (arity == 0) {
-					return arg0[Math.floor(Math.random() * arg0.length)]
-				} else if (arity == 1) {
-					return '[' + arg1[Math.floor(Math.random() * arg1.length)] + buildExpression(Math.floor(Math.random() * 3)) + ']'
-				} else {
-					return '[' + arg2[Math.floor(Math.random() * arg2.length)] + buildExpression(Math.floor(Math.random() * 3)) + ']'
-				}
-			}
-			
-			return buildExpression(2)
 		}
 
 		update() {
+			if (this.transpiled == '' && Math.random() < (1 - 0.9999 ** this.energy)) {
+				this.code = randomCode()
+				this.transpiled = transpile(this.x, this.y, this.code)
+				this.color = this.stringToColor(this.transpiled)
+				this.buffered = false
+				this.hitpoint = 25
+			}
 			
-			if (this.energy <= 0) {
+			if ((this.energy <= 0 || this.hitpoint <= 0) && this.transpiled != '') {
+				this.hitpoint = 0
 				this.code = []
 				this.transpiled = ''
 				this.color = this.stringToColor('')
-			} else if (this.transpiled == '') {}
+			} 
+
+			if (this.transpiled == '') {
+				this.energy += 1
+			}
 			
 			else {
 				this.energy -= 1
-				eval(this.transpiled)
+				if (this.hitpoint < 50) {
+					this.hitpoint += 1
+				}
+				
+				try {
+					eval(this.transpiled)
+				} catch(e) {
+					console.error(e)
+					this.code = randomCode()
+					this.transpiled = transpile(this.x, this.y, this.code)
+					this.color = this.stringToColor(this.transpiled)
+					this.buffered = false
+				}
 				if (this.buffered == true) {
 					this.buffered = false
 				}
 			}
-			
+		}
+
+		inside(direction: number) {
+			const d = directions[direction]
+			return this.x + d[0] >= 0 && this.x + d[0] < gridSize && this.y + d[1] >= 0 && this.y + d[1] < gridSize
+		}	
+
+		alive() {
+			if (this.energy > 0 && this.hitpoint > 0) {
+				return true
+			} else {
+				this.update()
+			}
 		}
 
 		grow(direction: number) {
 			const d = directions[direction]
 
-			if (this.x + d[0] >= 0 && this.x + d[0] < gridSize && this.y + d[1] >= 0 && this.y + d[1] < gridSize && this.buffered == false) {
+			if (this.inside(direction) && this.buffered == false && this.alive()) {
 				if (world[this.x + d[0]][this.y + d[1]].transpiled == '') {
 					world[this.x + d[0]][this.y + d[1]].code = this.code
 					world[this.x + d[0]][this.y + d[1]].color = this.color
+					world[this.x + d[0]][this.y + d[1]].hitpoint = 50
 					world[this.x + d[0]][this.y + d[1]].buffered = true
 					world[this.x + d[0]][this.y + d[1]].transpiled = transpile(this.x + d[0], this.y + d[1], this.code)
 				
@@ -290,9 +417,11 @@
 		move(direction: number) {
 			const d = directions[direction]
 
-			if (this.x + d[0] >= 0 && this.x + d[0] < gridSize && this.y + d[1] >= 0 && this.y + d[1] < gridSize && this.buffered == false && direction != 4) {
+			// can't move to the original cell
+			if (this.inside(direction) && this.buffered == false && direction != 4 && this.alive()) {
 				if (world[this.x + d[0]][this.y + d[1]].transpiled == '') {
 					world[this.x + d[0]][this.y + d[1]].code = this.code
+					world[this.x + d[0]][this.y + d[1]].hitpoint = this.hitpoint
 					world[this.x + d[0]][this.y + d[1]].color = this.color
 					world[this.x + d[0]][this.y + d[1]].buffered = true
 					world[this.x + d[0]][this.y + d[1]].transpiled = transpile(this.x + d[0], this.y + d[1], this.code)
@@ -308,32 +437,28 @@
 		lookup(direction: number, attribute: 'energy' | 'color') {
 			const d = directions[direction]
 
-			if (this.x + d[0] >= 0 && this.x + d[0] < gridSize && this.y + d[1] >= 0 && this.y + d[1] < gridSize && this.buffered == false) {
+			if (this.inside(direction) && this.buffered == false && this.alive()) {
 				return world[this.x + d[0]][this.y + d[1]][attribute]
 			}
-			
 		}
 
 		transfer(direction: number) {
 			const d = directions[direction]
 
-			if (this.x + d[0] >= 0 && this.x + d[0] < gridSize && this.y + d[1] >= 0 && this.y + d[1] < gridSize && this.buffered == false) {
+			if (this.inside(direction) && this.buffered == false && direction != 4 && this.alive()) {
 				const amount = Math.floor(this.energy * 0.1)
 				this.energy -= amount
 				world[this.x + d[0]][this.y + d[1]].energy += amount
 			}
-			
 		}
 
 		attack(direction: number) {
 			const d = directions[direction]
 
-			if (this.x + d[0] >= 0 && this.x + d[0] < gridSize && this.y + d[1] >= 0 && this.y + d[1] < gridSize && this.buffered == false) {
-				const amount = Math.floor(this.energy * 0.1)
-				this.energy -= 10
-				world[this.x + d[0]][this.y + d[1]].energy -= amount
+			if (this.inside(direction) && this.buffered == false && this.alive() && world[this.x + d[0]][this.y + d[1]].alive()) {
+				this.energy -= 5
+				world[this.x + d[0]][this.y + d[1]].hitpoint -= 10
 			}
-			
 		}
 
 		gain() {
@@ -353,102 +478,98 @@
 		world.push(temp)
 	}
 
+	// const a = new Cell(0, 0, [
+	// 	'var', 'a', ['%', 'random', 4],
+	// 	'if', ['>', ['lookup', 4, 'energy'], 50], [
+	// 		'grow', 'a',
+	// 	],
+	// 	'var', 'b', ['%', 'random', 4],
+	// 	'if', ['and', ['>', ['lookup', 4, 'energy'], 50], ['==', ['lookup', 4, 'color'], ['lookup', 'b', 'color']]] , [
+	// 		'transfer', 'b'
+	// 	]
+	// ])
+	// world[0][0] = a
 
-	const a = new Cell(0, 0, [
-		'var', 'a', ['%', 'random', 4],
-		'if', ['>', ['lookup', 4, 'energy'], 50], [
-			'grow', 'a',
-		],
-		'var', 'b', ['%', 'random', 4],
-		'if', ['and', ['>', ['lookup', 4, 'energy'], 50], ['==', ['lookup', 4, 'color'], ['lookup', 'b', 'color']]] , [
-			'transfer', 'b'
-		]
-	])
+	// const b = new Cell(5, 5, [
+	// 	'if', ['>', ['lookup', 4, 'energy'], 50], [
+	// 		'if', ['>', ['lookup', 4, 'energy'], 75], [
+	// 			'var', 'a', 0,
+	// 			'var', 'b', 0,
+	// 			'var', 'c', 100,
+	// 			'loop', 4, [
+	// 				'if', ['and', ['!=', ['lookup', 4, 'color'], ['lookup', 'a', 'color']], ['<', ['lookup', 'a', 'energy'], 'c']], [
+	// 					'set', 'b', 'a',
+	// 					'set', 'c', ['lookup', 'a', 'energy'],
+	// 				],
+	// 				'set', 'a', ['+', 'a', '1']
+	// 			],
+	// 			'if', ['and', ['!=', ['lookup', 4, 'color'], ['lookup', 'b', 'color']], ['!=', ['lookup', 'b', 'color'], 'empty']], [
+	// 				'attack', 'b'
+	// 			],
+	// 		],
+	// 		'var', 'a', ['%', 'random', 4],
+	// 		'if', ['==', ['lookup', 'a', 'color'], 'empty'], [
+	// 			'transfer', 'a',
+	// 			'grow', 'a'
+	// 		],
+	// 	]
+	// ])
 
-	world[0][0] = a
+	// world[5][5] = b
 
-	const b = new Cell(4, 4, [
-		'if', ['>', ['lookup', 4, 'energy'], 50], [
-			'if', ['>', ['lookup', 4, 'energy'], 75], [
-				'var', 'a', 0,
-				'var', 'b', 0,
-				'var', 'c', 100,
-				'loop', 4, [
-					'if', ['and', ['!=', ['lookup', 4, 'color'], ['lookup', 'a', 'color']], ['<', ['lookup', 'a', 'energy'], 'c']], [
-						'set', 'b', 'a',
-						'set', 'c', ['lookup', 'a', 'energy'],
-					],
-					'set', 'a', ['+', 'a', '1']
-				],
-				'out', ['lookup', 4, 'color'],
-				'out', ['lookup', 'b', 'color'],
-				'if', ['and', ['!=', ['lookup', 4, 'color'], ['lookup', 'b', 'color']], ['!=', ['lookup', 'b', 'color'], 'empty']], [
-					'out', 'b',
-					'attack', 'b'
-				]
-			],
-			'var', 'a', ['%', 'random', 4],
-			'transfer', 'a',
-			'grow', 'a'
-		]
-	])
+	// const c = new Cell(0, 4, [
+	// 	'var', 'a', ['%', 'random', 4],
+	// 	'if', ['and', ['==', ['lookup', 'a', 'color'], 'empty'], ['>', ['lookup', 4, 'energy'], 50]], [
+	// 		'grow', 'a',
+	// 		'transfer', 'a'
+	// 	],
+	// 	'var', 'a', 0,
+	// 	'var', 'b', 0,
+	// 	'var', 'c', 0,
+	// 	'loop', 4, [
+	// 		'if', ['>', ['lookup', 'a', 'energy'], 'c'], [
+	// 			'set', 'b', 'a',
+	// 			'set', 'c', ['lookup', 'a', 'energy']
+	// 		],
+	// 		'set', 'a', ['+', 'a', '1']
+	// 	],
+	// 	'if', ['>', 'c', ['lookup', 4, 'energy']], [
+	// 		'move', 'b'
+	// 	],
+	// ])
 
-	world[4][4] = b
+	// world[0][4] = c
 
-	const c = new Cell(0, 4, [
-		'var', 'a', ['%', 'random', 4],
-		'if', ['and', ['==', ['lookup', 'a', 'color'], 'empty'], ['>', ['lookup', 4, 'energy'], 50]], [
-			'grow', 'a',
-			'transfer', 'a'
-		],
-		'var', 'a', 0,
-		'var', 'b', 0,
-		'var', 'c', 0,
-		'loop', 4, [
-			'if', ['>', ['lookup', 'a', 'energy'], 'c'], [
-				'set', 'b', 'a',
-				'set', 'c', ['lookup', 'a', 'energy']
-			],
-			'set', 'a', ['+', 'a', '1']
-		],
-		'if', ['>', 'c', ['lookup', 4, 'energy']], [
-			'move', 'b'
-		],
-	])
+	// const d = new Cell(0, 0, [
+	// 	'if', ['>', ['lookup', 4, 'energy'], 50], [
+	// 		'grow', ['%', 'random', 4],
+	// 	],
+	// 	'var', 'a', 0,
+	// 	'var', 'b', 0,
+	// 	'var', 'c', 0,
+	// 	'loop', 4, [
+	// 		'if', ['>', ['lookup', 'a', 'energy'], 'c'], [
+	// 			'set', 'b', 'a',
+	// 			'set', 'c', ['lookup', 'a', 'energy']
+	// 		],
+	// 		'set', 'a', ['+', 'a', '1']
+	// 	],
+	// 	'if', ['>', 'c', ['lookup', 4, 'energy']], [
+	// 		'move', 'b'
+	// 	],
+	// ])
 
-	world[0][4] = c
-
-	const d = new Cell(4, 0, [
-		'if', ['>', ['lookup', 4, 'energy'], 50], [
-			'grow', ['%', 'random', 4],
-		],
-		'var', 'a', 0,
-		'var', 'b', 0,
-		'var', 'c', 0,
-		'loop', 4, [
-			'if', ['>', ['lookup', 'a', 'energy'], 'c'], [
-				'set', 'b', 'a',
-				'set', 'c', ['lookup', 'a', 'energy']
-			],
-			'set', 'a', ['+', 'a', '1']
-		],
-		'if', ['>', 'c', ['lookup', 4, 'energy']], [
-			'move', 'b'
-		],
-	])
-
-	world[4][0] = d
+	// world[0][0] = d
 
 
-	const t = new Cell(2, 2, [
-		'gain', 'gain', 'gain',
-		'transfer', ['%', 'random', 4]
-	])
+	// const t = new Cell(2, 2, [
+	// 	'gain', 'gain', 'gain',
+	// 	'transfer', ['%', 'random', 4]
+	// ])
 
-	world[2][2] = t
+	// world[2][2] = t
 
-
-
+	var iteration = 0
 	function updateWorld() {
 		
 		for (let x = 0; x < gridSize; x++) {
@@ -457,19 +578,27 @@
 			}
 		}
 		world = world // trigger the update
-		console.log(world)
-	
+		iteration++
 	}
 
 
 </script>
 
-<div>
+<div class='w-full mx-auto p-10'>
 	{#each world as row}
-		<div class='flex'>
+		<div class='flex justify-center'>
 			{#each row as cell}
-				<div class="inline-block m-5 bg-slate-300 rounded-md h-32 w-32 overflow-y-auto scrollbar-hide" style="background-color:{cell.color}">
-					<p class='bg-white/10'>({cell.x}, {cell.y}) {cell.energy}</p>
+				<!-- svelte-ignore a11y-click-events-have-key-events -->
+				<!-- svelte-ignore a11y-no-static-element-interactions -->
+				<div class="inline-block m-0 h-32 w-32 overflow-y-auto scrollbar-hide" style="background-color:{cell.color}" 
+					on:click={() => {
+						inspect = cell.code
+						console.log(cell.code, cell.transpiled)
+					}}
+				>
+					<div class='bg-white/75 text-center'>
+						<p>E {cell.energy} H {cell.hitpoint}</p>
+					</div>
 					<p class='bg-white/10 text-xs'>
 						{cell.transpiled}
 					</p>
@@ -477,28 +606,31 @@
 			{/each}
 		</div>
 	{/each}
+
+	<div class='flex justify-center'>
+		<button class='m-10 bg-blue-600 rounded-lg h-10 w-20'
+			on:click={() => updateWorld()}><p>Update</p></button
+		>
+	
+		<button class='m-10 bg-blue-600 rounded-lg h-10 w-20'
+			on:click={() => {
+				
+				if (!activated) {
+					intervalID = setInterval(() => {
+						updateWorld()
+					}, 100)
+				} else {
+					clearInterval(intervalID)
+				}
+				
+				activated = !activated
+	
+		}}><p>{activated ? 'Stop' : 'Auto'}</p></button
+		>	
+	</div>
+	<p>{iteration}</p>
+	<p>{inspect}</p>
 </div>
-
-<button class='m-10 bg-blue-600 rounded-lg h-10 w-20'
-	on:click={() => updateWorld()}><p>Update</p></button
->
-
-<button class='m-10 bg-blue-600 rounded-lg h-10 w-20'
-	on:click={() => {
-		
-		if (!activated) {
-			intervalID = setInterval(() => {
-				updateWorld()
-			}, 100)
-		} else {
-			clearInterval(intervalID)
-		}
-		
-		activated = !activated
-
-}}><p>{activated ? 'Stop' : 'Auto'}</p></button
->
-
 
 
 <style>
